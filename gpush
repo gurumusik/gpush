@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 
-# gpush: emoji commit + stash + push + auto PR + color output + extras
+# gpush: emoji commit + stash + push + optional rebase + optional PR + color output
 
 # --- CONFIG ---
 JIRA_PROJECT_PREFIX="GID"
 DEFAULT_REMOTE_BRANCH="dev"
-ENABLE_REBASE=true
-ENABLE_PR=true
+ENABLE_REBASE=false
+ENABLE_PR=false
 PR_DELAY_SECONDS=3
 
 # --- COLORS ---
@@ -19,7 +19,7 @@ RESET='\033[0m'
 # --- Version Information ---
 if [[ "$1" == "-v" || "$1" == "--version" || "$1" == "--v" ]]; then
   echo -e "${GREEN}Usage:${RESET}"
-  echo "v1.1.1"
+  echo "v1.2.0"
   echo ""
   exit 0
 fi
@@ -37,19 +37,18 @@ if [[ "$1" == "-h" || "$1" == "--help" ]]; then
   echo ""
   echo -e "${YELLOW}Options:${RESET}"
   echo "  --to <branch>     Push to a specific remote branch (default: current branch)"
-  echo "  --no-rebase       Skip rebase before commit"
-  echo "  --no-pr           Skip automatic Pull Request creation"
+  echo "  --rebase          Rebase before commit"
+  echo "  --pr              Automatically create Pull Request after push"
   echo "  -h, --help        Show this help message"
   echo ""
   echo -e "${YELLOW}Examples:${RESET}"
   echo "  gpush feat profile -m \"add profile page UI\""
-  echo "  gpush fix! auth -m \"remove legacy auth\" -b \"Token-based login removed\""
-  echo "  gpush chore deps -m \"update dependencies\" --to staging --no-pr"
+  echo "  gpush fix! auth -m \"remove legacy auth\" -b \"Token-based login removed\" --rebase --pr"
+  echo "  gpush chore deps -m \"update dependencies\" --to staging --rebase"
   echo ""
   echo -e "${YELLOW}📘 Default Behavior:${RESET}"
-  echo "  ✅ Rebase before push"
-  echo "  ✅ Auto create Pull Request"
-  echo "  ❌ Use --no-rebase or --no-pr to disable"
+  echo "  ❌ No rebase (unless you use --rebase)"
+  echo "  ❌ No PR (unless you use --pr)"
   echo ""
   echo -e "${YELLOW}Commit Types:${RESET}"
   echo "  ✨  feat       → New feature"
@@ -104,11 +103,11 @@ while [[ "$#" -gt 0 ]]; do
       shift
       CUSTOM_REMOTE_BRANCH="$1"
       ;;
-    --no-rebase)
-      ENABLE_REBASE=false
+    --rebase)
+      ENABLE_REBASE=true
       ;;
-    --no-pr)
-      ENABLE_PR=false
+    --pr)
+      ENABLE_PR=true
       ;;
     *)
       echo -e "${RED}❌ Unknown option:${RESET} $1"
@@ -197,7 +196,7 @@ if [[ "$ENABLE_REBASE" == true ]]; then
   echo -e "${BLUE}🔄 Rebasing onto origin/${REMOTE_BRANCH}...${RESET}"
   git fetch origin "$REMOTE_BRANCH" && git rebase origin/"$REMOTE_BRANCH"
 else
-  echo -e "${YELLOW}⚠️ Skipping rebase (--no-rebase).${RESET}"
+  echo -e "${YELLOW}⚠️ Skipping rebase (no --rebase flag used).${RESET}"
 fi
 
 # --- Apply Stash ---
@@ -231,5 +230,5 @@ if [[ "$ENABLE_PR" == true ]]; then
     echo -e "${YELLOW}💡 Install with:${RESET} brew install gh"
   fi
 else
-  echo -e "${YELLOW}⚠️ Pull Request creation skipped (--no-pr flag).${RESET}"
+  echo -e "${YELLOW}⚠️ Pull Request creation skipped (no --pr flag).${RESET}"
 fi
