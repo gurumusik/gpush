@@ -19,7 +19,7 @@ RESET='\033[0m'
 # --- Version Information ---
 if [[ "$1" == "-v" || "$1" == "--version" || "$1" == "--v" ]]; then
   echo -e "${GREEN}Usage:${RESET}"
-  echo "v1.1.0"
+  echo "v1.1.1"
   echo ""
   exit 0
 fi
@@ -45,6 +45,11 @@ if [[ "$1" == "-h" || "$1" == "--help" ]]; then
   echo "  gpush feat profile -m \"add profile page UI\""
   echo "  gpush fix! auth -m \"remove legacy auth\" -b \"Token-based login removed\""
   echo "  gpush chore deps -m \"update dependencies\" --to staging --no-pr"
+  echo ""
+  echo -e "${YELLOW}📘 Default Behavior:${RESET}"
+  echo "  ✅ Rebase before push"
+  echo "  ✅ Auto create Pull Request"
+  echo "  ❌ Use --no-rebase or --no-pr to disable"
   echo ""
   echo -e "${YELLOW}Commit Types:${RESET}"
   echo "  ✨  feat       → New feature"
@@ -84,6 +89,7 @@ shift 2
 BREAKING=""
 MESSAGE=""
 CUSTOM_REMOTE_BRANCH=""
+
 while [[ "$#" -gt 0 ]]; do
   case "$1" in
     -m)
@@ -174,7 +180,7 @@ COMMIT_MSG="$ICON $TYPE$SCOPE_FORMATTED: $MESSAGE"
 [[ "$IS_BREAKING" == true ]] && COMMIT_MSG="$ICON $TYPE$SCOPE_FORMATTED!: $MESSAGE"
 [[ -n "$BREAKING" ]] && COMMIT_MSG="$COMMIT_MSG\n\nBREAKING CHANGE: $BREAKING"
 
-# --- Check if local branch exists remotely ---
+# --- Check remote branch ---
 echo -e "${BLUE}🔍 Checking if remote branch exists...${RESET}"
 if ! git ls-remote --exit-code --heads origin "$LOCAL_BRANCH" &>/dev/null; then
   echo -e "${YELLOW}⚠️ Remote branch '$LOCAL_BRANCH' does not exist. It will be created on push.${RESET}"
@@ -184,85 +190,45 @@ fi
 
 # --- Git Stash ---
 echo -e "${BLUE}📦 Stashing local changes...${RESET}"
-if ! git stash -u; then
-  echo -e "${RED}❌ Failed to stash local changes.${RESET}"
-  echo -e "${YELLOW}💡 Tip:${RESET} Ensure you're inside a valid Git repository and there are no unresolved conflicts."
-  exit 1
-fi
+git stash -u
 
 # --- Rebase ---
 if [[ "$ENABLE_REBASE" == true ]]; then
-  echo -e "${BLUE}📥 Fetching updates from origin/${REMOTE_BRANCH}...${RESET}"
-  if ! git fetch origin "$REMOTE_BRANCH"; then
-    echo -e "${RED}❌ Failed to fetch from origin/${REMOTE_BRANCH}.${RESET}"
-    echo -e "${YELLOW}💡 Tip:${RESET} Ensure the branch '${REMOTE_BRANCH}' exists and your internet connection is active."
-    exit 1
-  fi
-
   echo -e "${BLUE}🔄 Rebasing onto origin/${REMOTE_BRANCH}...${RESET}"
-  if ! git rebase origin/"$REMOTE_BRANCH"; then
-    echo -e "${RED}❌ Rebase failed due to conflicts.${RESET}"
-    echo -e "${YELLOW}💡 Tip:${RESET} Run:"
-    echo -e "   ${BLUE}git status${RESET} → To view conflicting files"
-    echo -e "   Resolve them manually, then run:"
-    echo -e "   ${BLUE}git rebase --continue${RESET} or ${BLUE}git rebase --abort${RESET}"
-    exit 1
-  fi
+  git fetch origin "$REMOTE_BRANCH" && git rebase origin/"$REMOTE_BRANCH"
 else
-  echo -e "${YELLOW}⚠️ Skipping rebase (you used --no-rebase).${RESET}"
+  echo -e "${YELLOW}⚠️ Skipping rebase (--no-rebase).${RESET}"
 fi
 
 # --- Apply Stash ---
 echo -e "${BLUE}📂 Reapplying stashed changes...${RESET}"
-if ! git stash pop; then
-  echo -e "${YELLOW}⚠️ Nothing to pop from stash, or merge conflicts occurred.${RESET}"
-  echo -e "${YELLOW}💡 Tip:${RESET} If you see conflicts, resolve them and commit manually."
-fi
+git stash pop || echo -e "${YELLOW}⚠️ Nothing to pop or conflicts occurred.${RESET}"
 
 # --- Final Commit ---
-echo -e "${BLUE}📝 Staging files...${RESET}"
 git add .
+git commit -m "$COMMIT_MSG"
 
-echo -e "${BLUE}📝 Committing changes...${RESET}"
-if ! git commit -m "$COMMIT_MSG"; then
-  echo -e "${RED}❌ Commit failed.${RESET}"
-  echo -e "${YELLOW}💡 Tip:${RESET} Likely no changes were detected. Run ${BLUE}git status${RESET} to confirm."
-  exit 1
-fi
-
-# --- Show Commit Message ---
-echo -e "${GREEN}✅ Final Commit Message:${RESET}"
+echo -e "${GREEN}✅ Commit Message:${RESET}"
 echo -e "------------------------------------------------"
 echo -e "$COMMIT_MSG"
 echo -e "------------------------------------------------"
 
 # --- Push ---
 echo -e "${BLUE}🚀 Pushing to origin/${REMOTE_BRANCH}...${RESET}"
-if ! git push origin "$LOCAL_BRANCH:$REMOTE_BRANCH"; then
-  echo -e "${RED}❌ Push failed to origin/${REMOTE_BRANCH}.${RESET}"
-  echo -e "${YELLOW}💡 Tip:${RESET} Make sure you have push access, or try:"
-  echo -e "   ${BLUE}git pull --rebase${RESET} then retry."
-  exit 1
-fi
+git push origin "$LOCAL_BRANCH:$REMOTE_BRANCH" || exit 1
 
 echo -e "${GREEN}✅ Code successfully pushed to origin/${REMOTE_BRANCH}!${RESET}"
 
-# --- Auto Pull Request ---
+# --- Auto PR ---
 if [[ "$ENABLE_PR" == true ]]; then
   if command -v gh &> /dev/null; then
     echo -e "${BLUE}📦 Creating Pull Request using GitHub CLI...${RESET}"
     sleep $PR_DELAY_SECONDS
-    if ! gh pr create --base "$REMOTE_BRANCH" --head "$LOCAL_BRANCH" --title "$COMMIT_MSG" --body "" --web; then
-      echo -e "${RED}❌ Failed to create Pull Request via GitHub CLI.${RESET}"
-      echo -e "${YELLOW}💡 Tip:${RESET} Make sure you're authenticated. Try:"
-      echo -e "   ${BLUE}gh auth login${RESET}"
-      exit 1
-    fi
+    gh pr create --base "$REMOTE_BRANCH" --head "$LOCAL_BRANCH" --title "$COMMIT_MSG" --body "" --web
     echo -e "${GREEN}🚀 Pull Request opened in your browser!${RESET}"
   else
     echo -e "${YELLOW}⚠️ GitHub CLI (gh) not installed.${RESET}"
-    echo -e "${YELLOW}💡 Tip:${RESET} Install it using:"
-    echo -e "   ${BLUE}brew install gh${RESET} or visit https://cli.github.com"
+    echo -e "${YELLOW}💡 Install with:${RESET} brew install gh"
   fi
 else
   echo -e "${YELLOW}⚠️ Pull Request creation skipped (--no-pr flag).${RESET}"
